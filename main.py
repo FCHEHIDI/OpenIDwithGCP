@@ -1,10 +1,13 @@
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import RedirectResponse, JSONResponse, Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.templating import Jinja2Templates
 from authlib.integrations.starlette_client import OAuth
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
 import os
-from itsdangerous import URLSafeTimedSerializer
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -14,6 +17,8 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback")
 SECRET_KEY = os.getenv("SECRET_KEY", "changez-cette-cle-secrete")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
     raise ValueError("GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET doivent être définis dans .env")
@@ -24,6 +29,9 @@ app = FastAPI(
     description="Authentification OpenID Connect utilisant Google OAuth2",
     version="1.0.0"
 )
+
+# Configuration des templates
+templates = Jinja2Templates(directory="templates")
 
 # Ajouter le middleware de session
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -40,226 +48,54 @@ oauth.register(
     }
 )
 
-# Serializer pour générer des tokens sécurisés
-serializer = URLSafeTimedSerializer(SECRET_KEY)
+# Security pour JWT
+security = HTTPBearer()
 
 
-@app.get("/", response_class=HTMLResponse)
+# Fonctions JWT
+def create_jwt_token(user_data: dict) -> str:
+    """Créer un JWT contenant les données utilisateur"""
+    to_encode = user_data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def verify_jwt_token(token: str) -> dict:
+    """Vérifier et décoder un JWT"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+
+
+def get_current_user(request: Request) -> dict:
+    """Dépendance pour extraire l'utilisateur du JWT depuis les cookies"""
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Non authentifié - JWT manquant")
+    return verify_jwt_token(token)
+
+
+@app.get("/")
 async def home(request: Request):
     """Page d'accueil avec interface HTML"""
-    user = request.session.get('user')
+    # Vérifier si un JWT est présent dans les cookies
+    token = request.cookies.get("access_token")
+    user = None
     
-    if user:
-        user_info = f"""
-        <div class="user-info">
-            <img src="{user.get('picture')}" alt="Profile" style="border-radius: 50%; width: 50px; height: 50px;">
-            <div>
-                <strong>{user.get('name')}</strong>
-                <p style="margin: 0; color: #666;">{user.get('email')}</p>
-            </div>
-        </div>
-        """
-        auth_button = '<a href="/auth/logout" class="btn btn-danger">Se déconnecter</a>'
-    else:
-        user_info = '<p class="text-muted">Non connecté</p>'
-        auth_button = '<a href="/auth/login" class="btn btn-primary">Se connecter avec Google</a>'
+    if token:
+        try:
+            user = verify_jwt_token(token)
+        except HTTPException:
+            pass  # Token invalide, utilisateur non connecté
     
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>OpenID Connect - FastAPI</title>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }}
-            .navbar {{
-                background: white;
-                padding: 1rem 2rem;
-                border-radius: 10px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 2rem;
-            }}
-            .navbar h1 {{ 
-                color: #667eea; 
-                font-size: 1.5rem;
-            }}
-            .nav-links {{ 
-                display: flex; 
-                gap: 1rem; 
-                align-items: center;
-            }}
-            .container {{
-                max-width: 1200px;
-                margin: 0 auto;
-            }}
-            .card {{
-                background: white;
-                padding: 2rem;
-                border-radius: 10px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                margin-bottom: 2rem;
-            }}
-            .user-info {{
-                display: flex;
-                gap: 1rem;
-                align-items: center;
-                padding: 1rem;
-                background: #f8f9fa;
-                border-radius: 8px;
-                margin-bottom: 1rem;
-            }}
-            .endpoints {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                gap: 1rem;
-                margin-top: 1rem;
-            }}
-            .endpoint {{
-                padding: 1rem;
-                background: #f8f9fa;
-                border-radius: 8px;
-                border-left: 4px solid #667eea;
-            }}
-            .endpoint h3 {{
-                color: #667eea;
-                margin-bottom: 0.5rem;
-                font-size: 1rem;
-            }}
-            .endpoint p {{
-                color: #666;
-                font-size: 0.9rem;
-                margin-bottom: 0.5rem;
-            }}
-            .endpoint code {{
-                background: #e9ecef;
-                padding: 0.2rem 0.5rem;
-                border-radius: 4px;
-                font-size: 0.85rem;
-            }}
-            .btn {{
-                padding: 0.6rem 1.2rem;
-                border-radius: 6px;
-                text-decoration: none;
-                font-weight: 500;
-                transition: all 0.3s;
-                display: inline-block;
-            }}
-            .btn-primary {{
-                background: #667eea;
-                color: white;
-            }}
-            .btn-primary:hover {{
-                background: #5568d3;
-                transform: translateY(-2px);
-            }}
-            .btn-danger {{
-                background: #dc3545;
-                color: white;
-            }}
-            .btn-danger:hover {{
-                background: #c82333;
-            }}
-            .btn-secondary {{
-                background: #6c757d;
-                color: white;
-                font-size: 0.85rem;
-                padding: 0.4rem 0.8rem;
-            }}
-            .text-muted {{ color: #6c757d; }}
-            .badge {{
-                background: #28a745;
-                color: white;
-                padding: 0.25rem 0.5rem;
-                border-radius: 4px;
-                font-size: 0.75rem;
-            }}
-            .badge-warning {{
-                background: #ffc107;
-                color: #000;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <nav class="navbar">
-                <h1>🔐 OpenID Connect - FastAPI</h1>
-                <div class="nav-links">
-                    <a href="/docs" class="btn btn-secondary">📚 API Docs</a>
-                    {auth_button}
-                </div>
-            </nav>
-            
-            <div class="card">
-                <h2 style="margin-bottom: 1rem;">État de connexion</h2>
-                {user_info}
-            </div>
-            
-            <div class="card">
-                <h2 style="margin-bottom: 1rem;">Endpoints disponibles</h2>
-                <div class="endpoints">
-                    <div class="endpoint">
-                        <h3>🏠 Accueil</h3>
-                        <p>Page d'accueil avec interface</p>
-                        <code>GET /</code>
-                    </div>
-                    
-                    <div class="endpoint">
-                        <h3>🔑 Connexion</h3>
-                        <p>Initier l'authentification Google</p>
-                        <code>GET /auth/login</code>
-                        <br><br>
-                        <a href="/auth/login" class="btn btn-secondary">Tester</a>
-                    </div>
-                    
-                    <div class="endpoint">
-                        <h3>🚪 Déconnexion</h3>
-                        <p>Se déconnecter de la session</p>
-                        <code>GET /auth/logout</code>
-                        {'<br><br><a href="/auth/logout" class="btn btn-secondary">Tester</a>' if user else ''}
-                    </div>
-                    
-                    <div class="endpoint">
-                        <h3>👤 Infos utilisateur</h3>
-                        <p>Récupérer les données de l'utilisateur</p>
-                        <code>GET /api/user</code>
-                        {'<span class="badge">Authentifié</span>' if user else '<span class="badge badge-warning">Auth requise</span>'}
-                        <br><br>
-                        <a href="/api/user" class="btn btn-secondary">Tester</a>
-                    </div>
-                    
-                    <div class="endpoint">
-                        <h3>🔒 Route protégée</h3>
-                        <p>Exemple de ressource protégée</p>
-                        <code>GET /api/protected</code>
-                        {'<span class="badge">Authentifié</span>' if user else '<span class="badge badge-warning">Auth requise</span>'}
-                        <br><br>
-                        <a href="/api/protected" class="btn btn-secondary">Tester</a>
-                    </div>
-                    
-                    <div class="endpoint">
-                        <h3>❤️ Health Check</h3>
-                        <p>Vérifier l'état du serveur</p>
-                        <code>GET /health</code>
-                        <br><br>
-                        <a href="/health" class="btn btn-secondary">Tester</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    return templates.TemplateResponse("home.html", {
+        "request": request,
+        "user": user
+    })
 
 
 @app.get("/auth/login")
@@ -273,7 +109,7 @@ async def login(request: Request):
 async def auth_callback(request: Request):
     """
     Callback après authentification Google.
-    Récupère le token et les informations utilisateur.
+    Récupère le token et crée un JWT.
     """
     try:
         # Échanger le code d'autorisation contre un token
@@ -285,51 +121,57 @@ async def auth_callback(request: Request):
         if not user_info:
             raise HTTPException(status_code=400, detail="Impossible de récupérer les informations utilisateur")
         
-        # Stocker les informations utilisateur dans la session
-        request.session['user'] = {
+        # Créer les données utilisateur pour le JWT
+        user_data = {
             'email': user_info.get('email'),
             'name': user_info.get('name'),
             'picture': user_info.get('picture'),
-            'sub': user_info.get('sub'),  # Subject identifier (ID unique Google)
+            'sub': user_info.get('sub'),
             'email_verified': user_info.get('email_verified')
         }
         
-        # Rediriger vers la page d'accueil
-        return RedirectResponse(url='/')
+        # Créer un JWT
+        jwt_token = create_jwt_token(user_data)
+        
+        # Rediriger vers la page d'accueil avec le JWT dans un cookie
+        response = RedirectResponse(url='/')
+        response.set_cookie(
+            key="access_token",
+            value=jwt_token,
+            httponly=True,  # Protection XSS
+            max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            samesite="lax" # Protection CSRF
+        )
+        return response
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur d'authentification: {str(e)}")
 
 
 @app.get("/auth/logout")
-async def logout(request: Request):
-    """Déconnecter l'utilisateur"""
-    request.session.clear()
-    return JSONResponse({
+async def logout():
+    """Déconnecter l'utilisateur en supprimant le JWT"""
+    response = JSONResponse({
         "message": "Déconnexion réussie",
         "authenticated": False
     })
+    response.delete_cookie("access_token")
+    return response
 
 
 @app.get("/api/user")
-async def get_user(request: Request):
-    """Récupérer les informations de l'utilisateur connecté"""
-    user = request.session.get('user')
-    if not user:
-        raise HTTPException(status_code=401, detail="Non authentifié")
+async def get_user(user: dict = Depends(get_current_user)):
+    """Récupérer les informations de l'utilisateur connecté (protégé par JWT)"""
     return user
 
 
 @app.get("/api/protected")
-async def protected_route(request: Request):
-    """Exemple de route protégée nécessitant une authentification"""
-    user = request.session.get('user')
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentification requise")
-    
+async def protected_route(user: dict = Depends(get_current_user)):
+    """Exemple de route protégée nécessitant un JWT valide"""
     return {
         "message": "Accès autorisé à cette ressource protégée",
-        "user_email": user.get('email')
+        "user_email": user.get('email'),
+        "token_expires_at": datetime.fromtimestamp(user.get('exp')).isoformat()
     }
 
 

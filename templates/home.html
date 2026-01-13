@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenID Connect - FastAPI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .navbar {
+            background: white;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .navbar h1 { 
+            color: #667eea; 
+            font-size: 1.5rem;
+        }
+        .nav-links { 
+            display: flex; 
+            gap: 1rem; 
+            align-items: center;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        .user-info {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .endpoints {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .endpoint {
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .endpoint h3 {
+            color: #667eea;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+        .endpoint p {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        .endpoint code {
+            background: #e9ecef;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            font-size: 0.85rem;
+            padding: 0.4rem 0.8rem;
+        }
+        .text-muted { color: #6c757d; }
+        .badge {
+            background: #28a745;
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+        .badge-warning {
+            background: #ffc107;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <h1>🔐 OpenID Connect - FastAPI</h1>
+            <div class="nav-links">
+                <a href="/docs" class="btn btn-secondary">📚 API Docs</a>
+                {% if user %}
+                    <a href="/auth/logout" class="btn btn-danger">Se déconnecter</a>
+                {% else %}
+                    <a href="/auth/login" class="btn btn-primary">Se connecter avec Google</a>
+                {% endif %}
+            </div>
+        </nav>
+        
+        <div class="card">
+            <h2 style="margin-bottom: 1rem;">État de connexion</h2>
+            {% if user %}
+                <div class="user-info">
+                    <img src="{{ user.picture }}" alt="Profile" style="border-radius: 50%; width: 50px; height: 50px;">
+                    <div>
+                        <strong>{{ user.name }}</strong>
+                        <p style="margin: 0; color: #666;">{{ user.email }}</p>
+                    </div>
+                </div>
+            {% else %}
+                <p class="text-muted">Non connecté</p>
+            {% endif %}
+        </div>
+        
+        <div class="card">
+            <h2 style="margin-bottom: 1rem;">Endpoints disponibles</h2>
+            <div class="endpoints">
+                <div class="endpoint">
+                    <h3>🏠 Accueil</h3>
+                    <p>Page d'accueil avec interface</p>
+                    <code>GET /</code>
+                </div>
+                
+                <div class="endpoint">
+                    <h3>🔑 Connexion</h3>
+                    <p>Initier l'authentification Google</p>
+                    <code>GET /auth/login</code>
+                    <br><br>
+                    <a href="/auth/login" class="btn btn-secondary">Tester</a>
+                </div>
+                
+                <div class="endpoint">
+                    <h3>🚪 Déconnexion</h3>
+                    <p>Se déconnecter de la session</p>
+                    <code>GET /auth/logout</code>
+                    {% if user %}
+                        <br><br><a href="/auth/logout" class="btn btn-secondary">Tester</a>
+                    {% endif %}
+                </div>
+                
+                <div class="endpoint">
+                    <h3>👤 Infos utilisateur</h3>
+                    <p>Récupérer les données de l'utilisateur (JWT requis)</p>
+                    <code>GET /api/user</code>
+                    {% if user %}
+                        <span class="badge">Authentifié</span>
+                    {% else %}
+                        <span class="badge badge-warning">Auth requise</span>
+                    {% endif %}
+                    <br><br>
+                    <a href="/api/user" class="btn btn-secondary">Tester</a>
+                </div>
+                
+                <div class="endpoint">
+                    <h3>🔒 Route protégée</h3>
+                    <p>Exemple de ressource protégée par JWT</p>
+                    <code>GET /api/protected</code>
+                    {% if user %}
+                        <span class="badge">Authentifié</span>
+                    {% else %}
+                        <span class="badge badge-warning">Auth requise</span>
+                    {% endif %}
+                    <br><br>
+                    <a href="/api/protected" class="btn btn-secondary">Tester</a>
+                </div>
+                
+                <div class="endpoint">
+                    <h3>❤️ Health Check</h3>
+                    <p>Vérifier l'état du serveur</p>
+                    <code>GET /health</code>
+                    <br><br>
+                    <a href="/health" class="btn btn-secondary">Tester</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

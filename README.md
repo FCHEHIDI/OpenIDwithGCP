@@ -1,6 +1,15 @@
 # OpenID Connect avec Google et FastAPI
 
-Cette application implémente l'authentification OpenID Connect en utilisant Google comme fournisseur d'identité avec Python FastAPI.
+Cette application implémente l'authentification OpenID Connect en utilisant Google comme fournisseur d'identité avec Python FastAPI et JWT (JSON Web Tokens).
+
+## Caractéristiques
+
+- 🔐 Authentification OpenID Connect avec Google OAuth2
+- 🎫 JWT pour la gestion des sessions sécurisées
+- 🎨 Interface web moderne avec Jinja2 templates
+- 🔒 Routes API protégées avec vérification JWT
+- 📝 Documentation API interactive (Swagger/ReDoc)
+- ✅ Cookie HttpOnly pour stocker le JWT (protection XSS)
 
 ## Prérequis
 
@@ -46,14 +55,26 @@ Cette application implémente l'authentification OpenID Connect en utilisant Goo
 
 ## Installation
 
-### 1. Cloner et installer les dépendances
+### 1. Créer un environnement virtuel (recommandé)
 
 ```bash
-# Installer les dépendances
+# Créer un environnement virtuel
+python -m venv venv
+
+# Activer l'environnement (Windows)
+.\venv\Scripts\Activate.ps1
+
+# Activer l'environnement (Linux/Mac)
+source venv/bin/activate
+```
+
+### 2. Installer les dépendances
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configurer les variables d'environnement
+### 3. Configurer les variables d'environnement
 
 Créez un fichier `.env` à la racine du projet :
 
@@ -94,25 +115,31 @@ L'application sera accessible sur : http://localhost:8000
 
 ### Endpoints publics
 
-- **GET /** : Page d'accueil, affiche le statut de connexion
+- **GET /** : Page d'accueil avec interface web moderne
 - **GET /auth/login** : Initie le flux d'authentification Google
 - **GET /auth/callback** : Callback OAuth2 (utilisé par Google)
-- **GET /auth/logout** : Déconnexion de l'utilisateur
+- **GET /auth/logout** : Déconnexion et suppression du JWT
 - **GET /health** : Vérification de santé de l'application
 
-### Endpoints protégés (authentification requise)
+### Endpoints protégés (JWT requis)
 
-- **GET /api/user** : Récupère les informations de l'utilisateur connecté
-- **GET /api/protected** : Exemple de route protégée
+- **GET /api/user** : Récupère les informations de l'utilisateur depuis le JWT
+- **GET /api/protected** : Exemple de route protégée avec vérification JWT
 
-## Flux d'authentification
+**Note** : Les routes protégées lisent le JWT depuis le cookie `access_token` (HttpOnly).
 
-1. L'utilisateur visite `/auth/login`
-2. Il est redirigé vers la page de connexion Google
-3. Après authentification, Google redirige vers `/auth/callback`
-4. L'application échange le code d'autorisation contre un token
-5. Les informations utilisateur sont stockées dans la session
-6. L'utilisateur est redirigé vers la page d'accueil
+## Flux d'authentification avec JWT
+
+1. L'utilisateur clique sur "Se connecter avec Google" (`/auth/login`)
+2. Redirection vers la page de connexion Google
+3. L'utilisateur s'authentifie et accepte les permissions
+4. Google redirige vers `/auth/callback` avec un code d'autorisation
+5. FastAPI échange le code contre un token d'accès (serveur à serveur)
+6. FastAPI récupère les informations utilisateur via OpenID Connect
+7. **FastAPI crée un JWT** contenant les données utilisateur (email, nom, photo)
+8. Le JWT est stocké dans un **cookie HttpOnly** (protection XSS)
+9. L'utilisateur est redirigé vers la page d'accueil
+10. Les requêtes suivantes incluent automatiquement le cookie JWT
 
 ## Tester l'application
 
@@ -147,34 +174,65 @@ FastAPI génère automatiquement une documentation interactive :
 
 ```
 OpenID_Python/
-├── main.py              # Application FastAPI principale
+├── main.py              # Application FastAPI avec gestion JWT
+├── templates/
+│   └── home.html        # Template Jinja2 pour l'interface web
 ├── requirements.txt     # Dépendances Python
-├── .env                 # Configuration (à créer)
+├── .env                 # Configuration (à créer, non commité)
 ├── .env.example         # Template de configuration
-└── README.md           # Ce fichier
+├── .gitignore           # Fichiers à ignorer par git
+└── README.md            # Ce fichier
 ```
+
+## Architecture de sécurité
+
+### JWT (JSON Web Tokens)
+
+L'application utilise des JWT pour gérer l'authentification :
+
+- **Algorithme** : HS256 (HMAC avec SHA-256)
+- **Stockage** : Cookie HttpOnly (protection contre XSS)
+- **Expiration** : 60 minutes configurable
+- **Contenu** : email, name, picture, sub, email_verified, exp, iat
+
+**Avantages du JWT** :
+- ✅ Stateless : Pas besoin de stockage serveur des sessions
+- ✅ Signature cryptographique : Impossible de modifier sans la clé
+- ✅ Auto-expirant : Sécurité renforcée
+- ✅ Portable : Peut être utilisé avec des microservices
 
 ## Sécurité
 
 ### Bonnes pratiques implémentées :
 
 - ✅ Utilisation d'OpenID Connect (OAuth 2.0 + authentification)
-- ✅ Sessions sécurisées avec middleware de session
+- ✅ JWT avec signature HMAC-SHA256
+- ✅ Cookies HttpOnly (protection XSS)
+- ✅ SameSite=Lax (protection CSRF partielle)
 - ✅ Variables d'environnement pour les secrets
 - ✅ Validation des tokens côté serveur
-- ✅ HTTPS recommandé en production
+- ✅ Expiration automatique des JWT
+- ✅ Templates Jinja2 avec échappement automatique
+- ✅ HTTPS fortement recommandé en production
 
 ### Pour la production :
 
 1. **Utilisez HTTPS** :
-   - Configurez un certificat SSL/TLS
+   - Configurez un certificat SSL/TLS (Let's Encrypt)
    - Mettez à jour `GOOGLE_REDIRECT_URI` avec HTTPS
+   - Ajoutez `secure=True` aux cookies en production
 
 2. **Sécurisez votre SECRET_KEY** :
-   - Utilisez un gestionnaire de secrets (AWS Secrets Manager, etc.)
+   - Utilisez un gestionnaire de secrets (AWS Secrets Manager, Azure Key Vault, etc.)
    - Ne committez JAMAIS le fichier `.env`
+   - Rotation régulière de la clé
 
-3. **Configurez CORS** si nécessaire :
+3. **Désactivez /docs en production** :
+   ```python
+   app = FastAPI(docs_url=None, redoc_url=None)  # Désactive la doc
+   ```
+
+4. **Configurez CORS** si nécessaire :
    ```python
    from fastapi.middleware.cors import CORSMiddleware
    
@@ -187,23 +245,41 @@ OpenID_Python/
    )
    ```
 
-4. **Ajoutez des limites de taux (rate limiting)**
+5. **Ajoutez des limites de taux (rate limiting)** pour prévenir les abus
 
-5. **Utilisez une base de données** pour stocker les sessions au lieu de la mémoire
+6. **Whitelisting de domaines** (optionnel) :
+   - Limiter l'authentification à certains domaines email
+   - Exemple : `@votreentreprise.com` uniquement
+
+7. **Monitoring et logging** :
+   - Loggez les tentatives d'authentification
+   - Surveillez les JWT expirés/invalides
+   - Alertes sur les comportements suspects
 
 ## Informations utilisateur disponibles
 
-Après authentification, les informations suivantes sont disponibles :
+Après authentification, le JWT contient les informations suivantes :
 
 ```json
 {
   "email": "utilisateur@example.com",
   "name": "Nom Complet",
   "picture": "https://lh3.googleusercontent.com/...",
-  "sub": "identifiant-unique-google",
-  "email_verified": true
+  "sub": "103159421008563748606",
+  "email_verified": true,
+  "exp": 1736789123,
+  "iat": 1736785523
 }
 ```
+
+**Champs du JWT** :
+- `email` : Adresse email de l'utilisateur
+- `name` : Nom complet
+- `picture` : URL de la photo de profil
+- `sub` : Subject - Identifiant unique Google (immuable)
+- `email_verified` : Email vérifié par Google
+- `exp` : Expiration timestamp (60 minutes par défaut)
+- `iat` : Issued at timestamp (date de création)
 
 ## Débogage
 
