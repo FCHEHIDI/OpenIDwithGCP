@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import RedirectResponse, JSONResponse, Response
+from fastapi.responses import RedirectResponse, JSONResponse, Response, HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import status
 from fastapi.templating import Jinja2Templates
@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import os
+import json
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -134,14 +135,17 @@ async def auth_callback(request: Request):
         # Créer un JWT
         jwt_token = create_jwt_token(user_data)
         
-        # Rediriger vers la page d'accueil avec le JWT dans un cookie
+        # Rediriger vers la page d'accueil avec le JWT dans un cookie sécurisé
         response = RedirectResponse(url='/')
         response.set_cookie(
             key="access_token",
             value=jwt_token,
-            httponly=True,  # Protection XSS
+            httponly=True,  # Protection XSS : JavaScript ne peut pas accéder au cookie
             max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            samesite="lax" # Protection CSRF
+            samesite="lax"  # Protection CSRF partielle + UX optimale
+                           # Lax : bloque POST/PUT/DELETE cross-site (attaques CSRF)
+                           # tout en autorisant la navigation GET légitime (OAuth callback)
+                           # Alternative : "strict" (plus sûr mais casse OAuth/UX)
         )
         return response
         
@@ -161,25 +165,39 @@ async def logout():
 
 
 @app.get("/api/user")
-async def get_user(user: dict = Depends(get_current_user)):
+async def get_user(request: Request, user: dict = Depends(get_current_user)):
     """Récupérer les informations de l'utilisateur connecté (protégé par JWT)"""
-    return user
+    user_json = json.dumps(user, indent=2, ensure_ascii=False)
+    return templates.TemplateResponse("user.html", {
+        "request": request,
+        "user_json": user_json
+    })
 
 
 @app.get("/api/protected")
-async def protected_route(user: dict = Depends(get_current_user)):
+async def protected_route(request: Request, user: dict = Depends(get_current_user)):
     """Exemple de route protégée nécessitant un JWT valide"""
-    return {
+    data = {
         "message": "Accès autorisé à cette ressource protégée",
         "user_email": user.get('email'),
         "token_expires_at": datetime.fromtimestamp(user.get('exp')).isoformat()
     }
+    data_json = json.dumps(data, indent=2, ensure_ascii=False)
+    return templates.TemplateResponse("protected.html", {
+        "request": request,
+        "data_json": data_json
+    })
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(request: Request):
     """Endpoint de vérification de santé"""
-    return {"status": "healthy"}
+    data = {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    data_json = json.dumps(data, indent=2, ensure_ascii=False)
+    return templates.TemplateResponse("health.html", {
+        "request": request,
+        "data_json": data_json
+    })
 
 
 if __name__ == "__main__":
