@@ -17,8 +17,10 @@ load_dotenv()
 # Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback")
-SECRET_KEY = os.getenv("SECRET_KEY", "changez-cette-cle-secrete")
+# Utiliser REDIRECT_URI de l'environnement, sinon localhost pour dev
+GOOGLE_REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8000/auth/callback")
+# Utiliser JWT_SECRET_KEY ou SECRET_KEY pour compatibilité
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY", "changez-cette-cle-secrete")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
