@@ -106,7 +106,13 @@ async def home(request: Request):
 async def login(request: Request):
     """Initier le flux d'authentification OpenID Connect avec Google"""
     redirect_uri = GOOGLE_REDIRECT_URI
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # prompt='select_account' : force l'utilisateur à choisir un compte à chaque connexion
+    # Utile pour les démos ou si plusieurs utilisateurs partagent le même navigateur
+    return await oauth.google.authorize_redirect(
+        request, 
+        redirect_uri,
+        prompt='select_account'  # Force l'affichage du sélecteur de compte Google
+    )
 
 
 @app.get("/auth/callback")
