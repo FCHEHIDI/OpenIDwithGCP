@@ -1,0 +1,15 @@
+# Fichiers ignorés lors du déploiement Cloud Run
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+.env
+.env.local
+*.md
+!README.md
+.vscode/
+.idea/

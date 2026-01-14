@@ -48,6 +48,9 @@ Thumbs.db
 # Screenshots et images
 *.png
 *.jpg
+
+# Documentation de déploiement (contient des infos sensibles)
+DEPLOYMENT.md
 *.jpeg
 *.gif
 screenshots/
