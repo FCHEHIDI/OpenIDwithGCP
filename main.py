@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import status
 from fastapi.templating import Jinja2Templates
 from authlib.integrations.starlette_client import OAuth
 from starlette.middleware.sessions import SessionMiddleware
@@ -68,14 +69,14 @@ def verify_jwt_token(token: str) -> dict:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide ou expiré")
 
 
 def get_current_user(request: Request) -> dict:
     """Dépendance pour extraire l'utilisateur du JWT depuis les cookies"""
     token = request.cookies.get("access_token")
     if not token:
-        raise HTTPException(status_code=401, detail="Non authentifié - JWT manquant")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Non authentifié - JWT manquant")
     return verify_jwt_token(token)
 
 
