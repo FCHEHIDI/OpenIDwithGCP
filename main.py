@@ -20,12 +20,15 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 # Utiliser REDIRECT_URI de l'environnement, sinon localhost pour dev
 GOOGLE_REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8000/auth/callback")
 # Utiliser JWT_SECRET_KEY ou SECRET_KEY pour compatibilité
-SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY", "changez-cette-cle-secrete")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
     raise ValueError("GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET doivent être définis dans .env")
+
+if not SECRET_KEY:
+    raise ValueError("JWT_SECRET_KEY ou SECRET_KEY doit être défini dans les variables d'environnement")
 
 # Créer l'application FastAPI
 app = FastAPI(
