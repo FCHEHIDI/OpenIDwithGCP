@@ -55,11 +55,15 @@ oauth.register(
 # Security pour JWT
 security = HTTPBearer()
 
+# Base de données en mémoire (à remplacer par une vraie DB en production)
+# Structure: {sub: {email, name, picture, email_verified, updated_at}}
+users_db = {}
+
 
 # Fonctions JWT
-def create_jwt_token(user_data: dict) -> str:
-    """Créer un JWT contenant les données utilisateur"""
-    to_encode = user_data.copy()
+def create_jwt_token(user_sub: str) -> str:
+    """Créer un JWT contenant uniquement le sub (identifiant utilisateur)"""
+    to_encode = {'sub': user_sub}
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "iat": datetime.utcnow()})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -75,12 +79,52 @@ def verify_jwt_token(token: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide ou expiré")
 
 
+def save_user_to_db(user_data: dict) -> None:
+    """Sauvegarder ou mettre à jour les données utilisateur en base de données"""
+    sub = user_data.get('sub')
+    if not sub:
+        raise ValueError("Le 'sub' est requis pour sauvegarder un utilisateur")
+    
+    # Upsert: créer ou mettre à jour
+    users_db[sub] = {
+        'email': user_data.get('email'),
+        'name': user_data.get('name'),
+        'picture': user_data.get('picture'),
+        'email_verified': user_data.get('email_verified'),
+        'updated_at': datetime.utcnow().isoformat()
+    }
+
+
+def get_user_from_db(sub: str) -> dict:
+    """Récupérer les données utilisateur depuis la base de données"""
+    user = users_db.get(sub)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur non trouvé")
+    # Ajouter le sub aux données retournées
+    return {**user, 'sub': sub}
+
+
 def get_current_user(request: Request) -> dict:
-    """Dépendance pour extraire l'utilisateur du JWT depuis les cookies"""
+    """Dépendance pour extraire l'utilisateur du JWT et récupérer ses données depuis la DB"""
     token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Non authentifié - JWT manquant")
-    return verify_jwt_token(token)
+    
+    # Vérifier le JWT (contient uniquement le sub)
+    jwt_payload = verify_jwt_token(token)
+    user_sub = jwt_payload.get('sub')
+    
+    if not user_sub:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalide: 'sub' manquant")
+    
+    # Récupérer les données complètes depuis la DB
+    user_data = get_user_from_db(user_sub)
+    
+    # Ajouter les infos du JWT (exp, iat) aux données utilisateur
+    user_data['exp'] = jwt_payload.get('exp')
+    user_data['iat'] = jwt_payload.get('iat')
+    
+    return user_data
 
 
 @app.get("/")
@@ -92,9 +136,12 @@ async def home(request: Request):
     
     if token:
         try:
-            user = verify_jwt_token(token)
-        except HTTPException:
-            pass  # Token invalide, utilisateur non connecté
+            jwt_payload = verify_jwt_token(token)
+            user_sub = jwt_payload.get('sub')
+            if user_sub:
+                user = get_user_from_db(user_sub)
+        except (HTTPException, Exception):
+            pass  # Token invalide ou utilisateur non trouvé, utilisateur non connecté
     
     return templates.TemplateResponse("home.html", {
         "request": request,
@@ -131,7 +178,7 @@ async def auth_callback(request: Request):
         if not user_info:
             raise HTTPException(status_code=400, detail="Impossible de récupérer les informations utilisateur")
         
-        # Créer les données utilisateur pour le JWT
+        # Préparer les données utilisateur complètes
         user_data = {
             'email': user_info.get('email'),
             'name': user_info.get('name'),
@@ -140,8 +187,11 @@ async def auth_callback(request: Request):
             'email_verified': user_info.get('email_verified')
         }
         
-        # Créer un JWT
-        jwt_token = create_jwt_token(user_data)
+        # Sauvegarder les données complètes en base de données
+        save_user_to_db(user_data)
+        
+        # Créer un JWT contenant uniquement le sub
+        jwt_token = create_jwt_token(user_data['sub'])
         
         # Rediriger vers la page d'accueil avec le JWT dans un cookie sécurisé
         response = RedirectResponse(url='/')
