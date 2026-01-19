@@ -1,5 +1,7 @@
 # OpenID Connect avec Google et FastAPI
 
+![OpenID Google Authentication](assets/OpenIDGooglePassport.png)
+
 Cette application implémente l'authentification OpenID Connect en utilisant Google comme fournisseur d'identité avec Python FastAPI et JWT (JSON Web Tokens).
 
 ## Caractéristiques
