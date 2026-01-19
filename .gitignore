@@ -45,9 +45,11 @@ Thumbs.db
 # Logs
 *.log
 
-# Screenshots et images
+# Screenshots et images (sauf assets/)
 *.png
+!assets/*.png
 *.jpg
+!assets/*.jpg
 
 # Documentation de déploiement (contient des infos sensibles)
 DEPLOYMENT.md
